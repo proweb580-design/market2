@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { loadEnv } from '../src/config/load-env.js';
 import { createPrismaClient } from '../src/infra/prisma/create-client.js';
 
 /**
@@ -7,7 +7,7 @@ import { createPrismaClient } from '../src/infra/prisma/create-client.js';
  * Only active when TEST_DATABASE_URL is set; refuses any database whose name does not end in "_test".
  */
 export default async function setup() {
-  if (existsSync('.env')) process.loadEnvFile('.env');
+  loadEnv();
   const url = process.env.TEST_DATABASE_URL;
   if (!url) return;
   if (!new URL(url).pathname.endsWith('_test')) throw new Error('TEST_DATABASE_URL must name a *_test database');

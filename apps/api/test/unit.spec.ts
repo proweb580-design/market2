@@ -6,6 +6,7 @@ import { JwtVerifier, TokenError } from '../src/modules/auth/token-verifier.js';
 import { ApiKeyRateLimiter } from '../src/modules/auth/rate-limiter.js';
 import { parseSort } from '../src/common/pagination.js';
 import { randomToken, safeEqualHex, sha256 } from '../src/common/crypto.js';
+import { addInterval } from '../src/modules/billing/period.js';
 import { createTestApp, ISSUER, AUDIENCE } from './helpers.js';
 
 const sub = '3f2b8a52-6a53-4f6c-9d9a-0a3b6f3c1c11';
@@ -83,6 +84,16 @@ describe('helpers', () => {
     expect(safeEqualHex(sha256('a'), sha256('a'))).toBe(true);
     expect(safeEqualHex(sha256('a'), sha256('b'))).toBe(false);
     expect(safeEqualHex('abcd', 'ab')).toBe(false);
+  });
+});
+
+describe('addInterval', () => {
+  it('adds months/years in UTC and clamps the day to the target month', () => {
+    expect(addInterval(new Date('2026-01-31T10:00:00Z'), 'MONTH').toISOString()).toBe('2026-02-28T10:00:00.000Z');
+    expect(addInterval(new Date('2028-01-31T10:00:00Z'), 'MONTH').toISOString()).toBe('2028-02-29T10:00:00.000Z');
+    expect(addInterval(new Date('2026-12-15T00:00:00Z'), 'MONTH').toISOString()).toBe('2027-01-15T00:00:00.000Z');
+    expect(addInterval(new Date('2028-02-29T00:00:00Z'), 'YEAR').toISOString()).toBe('2029-02-28T00:00:00.000Z');
+    expect(addInterval(new Date('2026-03-31T00:00:00Z'), 'MONTH', 2).toISOString()).toBe('2026-05-31T00:00:00.000Z');
   });
 });
 

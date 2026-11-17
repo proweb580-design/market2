@@ -7,6 +7,8 @@ import { Prisma } from '../../generated/prisma/client.js';
 import { ENV, type Env } from '../../config/env.js';
 import { PrismaService } from '../../infra/prisma/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { EntitlementsService } from '../billing/entitlements.service.js';
+import { SubscriptionsService } from '../billing/subscriptions.service.js';
 import { Inject } from '@nestjs/common';
 
 const MAX_OWNED_ORGANIZATIONS = 5;
@@ -26,6 +28,8 @@ export class OrganizationsService {
     private readonly db: PrismaService,
     private readonly audit: AuditService,
     @Inject(ENV) private readonly env: Env,
+    private readonly subscriptions: SubscriptionsService,
+    private readonly entitlements: EntitlementsService,
   ) {}
 
   // ── organizations ──
@@ -45,7 +49,7 @@ export class OrganizationsService {
         });
         await tx.organizationMember.create({ data: { organizationId: org.id, userId, roleId: ownerRole.id } });
         await this.audit.record(req, { action: 'organization.created', organizationId: org.id, entityType: 'organization', entityId: org.id, metadata: { slug: dto.slug } }, tx);
-        // Phase 6 attaches the Free plan subscription here, inside the same transaction.
+        await this.subscriptions.createFree(tx, org.id, userId);
         return org;
       });
     } catch (error) {
@@ -225,6 +229,8 @@ export class OrganizationsService {
     if (!invitation || invitation.acceptedAt || invitation.revokedAt || invitation.expiresAt <= new Date()) throw notFound;
     if (invitation.organization.deletedAt || invitation.organization.status !== 'ACTIVE') throw notFound;
     if (!user.email || user.email !== invitation.email) throw notFound;
+    // The pending invitation is already counted in usage, so accepting it adds nothing — unless the plan shrank since.
+    await this.entitlements.assertLimit(invitation.organizationId, 'members.max', 0);
 
     try {
       await this.db.$transaction(async (tx) => {

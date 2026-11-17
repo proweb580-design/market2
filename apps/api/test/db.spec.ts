@@ -5,19 +5,19 @@
  */
 import 'reflect-metadata';
 import { execSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // Migrations + first seed run in test/global-setup.ts.
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { PERMISSION_KEYS, PERMISSIONS } from '@repo/shared';
+import { loadEnv } from '../src/config/load-env.js';
 import { AppModule } from '../src/app.module.js';
 import { ENV, parseEnv } from '../src/config/env.js';
 import { setupApp } from '../src/setup.js';
 import { createPrismaClient, type Db } from '../src/infra/prisma/create-client.js';
 
-if (existsSync('.env')) process.loadEnvFile('.env');
+loadEnv();
 const url = process.env.TEST_DATABASE_URL;
 
 describe.skipIf(!url)('database (TEST_DATABASE_URL)', () => {
@@ -44,7 +44,7 @@ describe.skipIf(!url)('database (TEST_DATABASE_URL)', () => {
     it('is idempotent and mirrors the shared catalogues', async () => {
       expect(await db.permission.count()).toBe(PERMISSION_KEYS.length);
       expect(await db.role.count({ where: { isSystem: true } })).toBe(9);
-      expect(await db.plan.count()).toBe(5);
+      expect(await db.plan.count({ where: { code: { in: ['FREE', 'BASIC', 'PRO', 'BUSINESS', 'ENTERPRISE'] } } })).toBe(5);
       const free = await db.plan.findUniqueOrThrow({ where: { code: 'FREE' }, include: { features: true } });
       expect(free.features.find((f) => f.featureKey === 'products.max')?.limitValue).toBe(10);
     });

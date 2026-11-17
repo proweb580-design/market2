@@ -1,8 +1,12 @@
 import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { defineConfig } from 'prisma/config';
 
-// Same .env the API reads; deployed environments inject real env vars.
-if (existsSync('.env')) process.loadEnvFile('.env');
+// Same files the API reads (apps/api/.env, then the root .env); deployed environments inject real env vars.
+for (const file of ['.env', '../../.env']) {
+  const path = resolve(process.cwd(), file);
+  if (existsSync(path)) process.loadEnvFile(path);
+}
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',

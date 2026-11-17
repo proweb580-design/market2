@@ -2,6 +2,11 @@ import { type INestApplication, VersioningType } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ENV, type Env } from './config/env.js';
 
+// Money and Telegram ids are BIGINT; JSON has no bigint, and every value we store is far below 2^53.
+(BigInt.prototype as unknown as { toJSON(): number }).toJSON = function (this: bigint) {
+  return Number(this);
+};
+
 /** HTTP setup shared by main.ts and the API tests, so tests hit the same /api/v1 routes. */
 export function setupApp(app: INestApplication): Env {
   const env = app.get<Env>(ENV);

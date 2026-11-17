@@ -6,6 +6,7 @@ import { CurrentPrincipal, CurrentTenant, Req, RequirePermissions, UserOnly } fr
 import type { AppRequest, Principal, Tenant } from '../../common/principal.js';
 import { ApiZodBody, ApiZodQuery, ZodPipe } from '../../common/zod.js';
 import { AccessService } from '../access/access.service.js';
+import { RequireFeature } from '../billing/subscription.guard.js';
 import { ApiKeysService, logsQuerySchema } from './api-keys.service.js';
 
 type Create = z.infer<typeof createApiKeySchema>;
@@ -25,6 +26,7 @@ export class OrganizationApiKeysController {
   @Post()
   @UserOnly()
   @RequirePermissions('org.api_keys.manage')
+  @RequireFeature('api_access')
   @ApiZodBody(createApiKeySchema)
   async create(@Req() req: AppRequest, @CurrentPrincipal() p: Principal, @CurrentTenant() tenant: Tenant, @Body(new ZodPipe(createApiKeySchema)) body: Create) {
     const grantable = await this.access.grantable(req, userId(p), tenant);

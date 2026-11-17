@@ -80,7 +80,7 @@ Prisma не умеет описывать частичные индексы, CHE
 ## Подключение
 
 - **Локально**: `docker compose -f infrastructure/docker-compose.yml up -d` — Postgres 17 (UTF-8) с базами `platform` и `platform_test`.
-- **Supabase**: в `apps/api/.env` `DATABASE_URL` — строка session pooler, `DIRECT_URL` — прямое подключение (5432) для миграций.
+- **Supabase**: в корневом `.env` `DATABASE_URL` — строка session pooler, `DIRECT_URL` — прямое подключение (5432) для миграций.
   После первого `db:deploy` в Supabase **не** добавлять схему `app` в Exposed schemas (Settings → API).
 
 ## Тесты

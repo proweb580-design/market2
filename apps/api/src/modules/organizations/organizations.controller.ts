@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { CurrentPrincipal, CurrentTenant, MemberOnly, Req, RequirePermissions, UserOnly } from '../../common/decorators.js';
 import type { AppRequest, Principal, Tenant } from '../../common/principal.js';
 import { ApiZodBody, ZodPipe } from '../../common/zod.js';
+import { CheckLimit } from '../billing/subscription.guard.js';
 import { OrganizationsService, type OrgActor } from './organizations.service.js';
 
 const user = (p: Principal) => (p as { user: { id: string; email: string | null } }).user;
@@ -97,6 +98,7 @@ export class OrganizationsController {
   @Post(':orgId/invitations')
   @UserOnly()
   @RequirePermissions('org.members.manage')
+  @CheckLimit('members.max')
   @ApiZodBody(createInvitationSchema)
   invite(@Req() req: AppRequest, @CurrentPrincipal() p: Principal, @CurrentTenant() tenant: Tenant, @Body(new ZodPipe(createInvitationSchema)) body: z.infer<typeof createInvitationSchema>) {
     return this.orgs.createInvitation(req, actor(p, tenant), body);

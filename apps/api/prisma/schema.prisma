@@ -694,6 +694,8 @@ model Transaction {
 
   @@unique([paymentId, providerTransactionId])
   @@index([paymentId, createdAt])
+  // Refund webhooks find the original charge by its provider id.
+  @@index([providerTransactionId])
   @@map("transactions")
   @@schema("app")
 }

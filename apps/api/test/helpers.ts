@@ -1,17 +1,18 @@
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
 import { generateKeyPair, SignJWT } from 'jose';
 import request from 'supertest';
 import { Test } from '@nestjs/testing';
 import { type INestApplication, Controller, Get } from '@nestjs/common';
+import { loadEnv } from '../src/config/load-env.js';
 import { AppModule } from '../src/app.module.js';
 import { ENV, parseEnv } from '../src/config/env.js';
 import { setupApp } from '../src/setup.js';
 import { createPrismaClient, type Db } from '../src/infra/prisma/create-client.js';
 import { JwtVerifier, TOKEN_VERIFIER } from '../src/modules/auth/token-verifier.js';
+import { PAYMENT_PROVIDER, type PaymentProvider } from '../src/modules/billing/payments/payment-provider.js';
 
-if (existsSync('.env')) process.loadEnvFile('.env');
+loadEnv();
 export const TEST_DB = process.env.TEST_DATABASE_URL;
 
 export const ISSUER = 'https://test-project.supabase.co/auth/v1';
@@ -50,7 +51,7 @@ export interface TestUser {
   del(path: string): request.Test;
 }
 
-export async function createTestApp(envOverrides: Record<string, string> = {}) {
+export async function createTestApp(envOverrides: Record<string, string> = {}, options: { paymentProvider?: PaymentProvider } = {}) {
   const keys = await generateKeyPair('ES256');
   const verifier = new JwtVerifier({ issuer: ISSUER, audience: AUDIENCE, jwks: async () => keys.publicKey });
 
@@ -67,8 +68,10 @@ export async function createTestApp(envOverrides: Record<string, string> = {}) {
     )
     .overrideProvider(TOKEN_VERIFIER)
     .useValue(verifier)
+    .overrideProvider(PAYMENT_PROVIDER)
+    .useValue(options.paymentProvider ?? null)
     .compile();
-  const app: INestApplication = moduleRef.createNestApplication();
+  const app: INestApplication = moduleRef.createNestApplication({ rawBody: true });
   setupApp(app);
   await app.init();
 
@@ -119,8 +122,14 @@ export async function createTestApp(envOverrides: Record<string, string> = {}) {
     await db.userRole.create({ data: { userId, roleId: role.id } });
   }
 
-  async function createOrg(owner: TestUser, slug = `org-${randomUUID().slice(0, 8)}`) {
+  /** Creates an organization through the API (it starts on FREE), then — unless `plan` is FREE — moves it to `plan`
+   *  directly in the DB, so non-billing tests aren't limited by Free-plan quotas. */
+  async function createOrg(owner: TestUser, slug = `org-${randomUUID().slice(0, 8)}`, plan = 'BUSINESS') {
     const res = await owner.post('/organizations', { slug, name: `Org ${slug}` }).expect(201);
+    if (plan !== 'FREE') {
+      const target = await db.plan.findUniqueOrThrow({ where: { code: plan } });
+      await db.subscription.updateMany({ where: { organizationId: res.body.id, status: 'ACTIVE' }, data: { planId: target.id } });
+    }
     return res.body as { id: string; slug: string };
   }
 

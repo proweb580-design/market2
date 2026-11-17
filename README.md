@@ -6,6 +6,7 @@ SaaS для брендов одежды: витрина в стиле рефер
 - Архитектура и ER-модель: [docs/architecture.md](docs/architecture.md)
 - База данных: [docs/database.md](docs/database.md)
 - REST API, авторизация и права: [docs/api.md](docs/api.md)
+- Тарифы, подписки, Stripe: [docs/billing.md](docs/billing.md)
 
 ## Требования
 
@@ -17,7 +18,7 @@ SaaS для брендов одежды: витрина в стиле рефер
 
 ```bash
 pnpm install
-cp apps/api/.env.example apps/api/.env
+cp .env.example .env   # единый файл настроек в корне; впишите ключи Supabase
 docker compose -f infrastructure/docker-compose.yml up -d
 pnpm --filter @repo/api db:deploy
 pnpm --filter @repo/api db:seed

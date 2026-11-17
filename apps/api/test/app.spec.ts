@@ -99,4 +99,12 @@ describe('parseEnv', () => {
     expect(() => parseEnv({ CORS_ORIGINS: 'http://a' })).toThrow(/DATABASE_URL/);
     expect(() => parseEnv({ CORS_ORIGINS: 'http://a', DATABASE_URL: 'mysql://x' })).toThrow(/DATABASE_URL/);
   });
+
+  it('treats blank values as unset and keeps Stripe live keys out of non-production', () => {
+    const base = { NODE_ENV: 'test', CORS_ORIGINS: 'http://a', DATABASE_URL: 'postgresql://x' };
+    expect(parseEnv({ ...base, STRIPE_SECRET_KEY: '', STRIPE_WEBHOOK_SECRET: '' }).STRIPE_SECRET_KEY).toBeUndefined();
+    expect(() => parseEnv({ ...base, STRIPE_SECRET_KEY: 'sk_live_abc' })).toThrow(/live keys/);
+    expect(() => parseEnv({ ...base, STRIPE_SECRET_KEY: 'pk_test_abc' })).toThrow(/STRIPE_SECRET_KEY/);
+    expect(parseEnv({ ...base, NODE_ENV: 'production', SUPABASE_URL: 'https://p.supabase.co', STRIPE_SECRET_KEY: 'sk_live_abc' }).STRIPE_SECRET_KEY).toBe('sk_live_abc');
+  });
 });

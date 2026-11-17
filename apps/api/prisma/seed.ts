@@ -5,11 +5,11 @@
  * - SEED_SUPER_ADMIN_EMAIL (optional) grants SUPER_ADMIN to that email's user.
  * No demo/business data is created here.
  */
-import { existsSync } from 'node:fs';
 import { DEFAULT_PLANS, PERMISSIONS, PERMISSION_KEYS, SYSTEM_ROLE_DEFINITIONS } from '@repo/shared';
+import { loadEnv } from '../src/config/load-env.js';
 import { createPrismaClient } from '../src/infra/prisma/create-client.js';
 
-if (existsSync('.env')) process.loadEnvFile('.env');
+loadEnv();
 const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;
 if (!url) throw new Error('DIRECT_URL or DATABASE_URL must be set');
 

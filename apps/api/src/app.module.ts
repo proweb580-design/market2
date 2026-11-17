@@ -16,6 +16,8 @@ import { ApiLogMiddleware } from './modules/api-keys/api-log.middleware.js';
 import { AuditModule } from './modules/audit/audit.module.js';
 import { AuthGuard } from './modules/auth/auth.guard.js';
 import { AuthModule } from './modules/auth/auth.module.js';
+import { BillingModule } from './modules/billing/billing.module.js';
+import { SubscriptionGuard } from './modules/billing/subscription.guard.js';
 import { OrganizationsModule } from './modules/organizations/organizations.module.js';
 import { ProfilesModule } from './modules/profiles/profiles.module.js';
 import { RbacModule } from './modules/rbac/rbac.module.js';
@@ -32,6 +34,7 @@ import { UsersModule } from './modules/users/users.module.js';
     AuditModule,
     AccessModule,
     AuthModule,
+    BillingModule,
     UsersModule,
     ProfilesModule,
     RbacModule,
@@ -42,15 +45,16 @@ import { UsersModule } from './modules/users/users.module.js';
   controllers: [HealthController],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
-    // Order matters: rate limit → authenticate → resolve tenant → authorize.
+    // Order matters: rate limit → authenticate → resolve tenant → authorize (role) → plan allows it.
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_GUARD, useClass: TenantGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
+    { provide: APP_GUARD, useExisting: SubscriptionGuard },
   ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(requestId, ApiLogMiddleware).forRoutes('*');
+    consumer.apply(requestId, ApiLogMiddleware).forRoutes('{*path}');
   }
 }
