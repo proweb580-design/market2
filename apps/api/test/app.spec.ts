@@ -1,6 +1,8 @@
 import 'reflect-metadata';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { DiscoveryModule, DiscoveryService, Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
+import { IS_PUBLIC, MEMBER_ONLY, PERMISSIONS_META, USER_ONLY } from '../src/common/decorators.js';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
@@ -11,7 +13,7 @@ describe('API bootstrap', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+    const moduleRef = await Test.createTestingModule({ imports: [AppModule, DiscoveryModule] })
       .overrideProvider(ENV)
       .useValue(
         parseEnv({
@@ -33,9 +35,43 @@ describe('API bootstrap', () => {
     await request(app.getHttpServer()).get('/api/v1/health').expect(200, { status: 'ok' });
   });
 
-  it('publishes the OpenAPI document', async () => {
+  it('publishes the OpenAPI document with every module and its body/query schemas', async () => {
     const res = await request(app.getHttpServer()).get('/api/docs-json').expect(200);
-    expect(res.body.paths).toHaveProperty('/api/v1/health');
+    const paths = res.body.paths as Record<string, Record<string, { requestBody?: unknown; parameters?: { name: string }[] }>>;
+    for (const p of [
+      '/api/v1/health',
+      '/api/v1/auth/me',
+      '/api/v1/profiles/me',
+      '/api/v1/organizations/{orgId}/members',
+      '/api/v1/organizations/{orgId}/api-keys',
+      '/api/v1/roles',
+      '/api/v1/admin/users',
+    ]) {
+      expect(paths, p).toHaveProperty([p]);
+    }
+    expect(paths['/api/v1/organizations'].post.requestBody).toBeDefined();
+    expect(paths['/api/v1/admin/users'].get.parameters!.map((x) => x.name)).toEqual(expect.arrayContaining(['q', 'status', 'page', 'pageSize', 'sort']));
+    expect(Object.keys(paths).length).toBeGreaterThan(40);
+  });
+
+  it('every route declares an access rule (@Public, @UserOnly, @MemberOnly or @RequirePermissions)', () => {
+    const discovery = app.get(DiscoveryService);
+    const reflector = app.get(Reflector);
+    const unprotected: string[] = [];
+    let routes = 0;
+    for (const wrapper of discovery.getControllers()) {
+      const proto = wrapper.metatype?.prototype as Record<string, unknown> | undefined;
+      if (!proto) continue;
+      for (const name of Object.getOwnPropertyNames(proto)) {
+        const handler = proto[name];
+        if (name === 'constructor' || typeof handler !== 'function' || Reflect.getMetadata('path', handler) === undefined) continue;
+        routes += 1;
+        const ruled = [IS_PUBLIC, USER_ONLY, MEMBER_ONLY, PERMISSIONS_META].some((k) => reflector.getAllAndOverride(k, [handler, wrapper.metatype!]));
+        if (!ruled) unprotected.push(`${wrapper.metatype!.name}.${name}`);
+      }
+    }
+    expect(routes).toBeGreaterThan(40);
+    expect(unprotected).toEqual([]);
   });
 
   it('allows only configured CORS origins', async () => {
@@ -52,7 +88,7 @@ describe('API bootstrap', () => {
 
   it('reports not-ready (503) without leaking details when the database is down', async () => {
     const res = await request(app.getHttpServer()).get('/api/v1/health/ready').expect(503);
-    expect(res.body).toMatchObject({ status: 'error', database: 'down' });
+    expect(res.body).toMatchObject({ statusCode: 503, details: { database: 'down' } });
     expect(JSON.stringify(res.body)).not.toMatch(/127\.0\.0\.1|nobody|ECONNREFUSED/);
   });
 });

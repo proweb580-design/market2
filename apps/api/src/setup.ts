@@ -10,6 +10,10 @@ export function setupApp(app: INestApplication): Env {
   app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.enableCors({ origin: env.CORS_ORIGINS, credentials: true });
   app.enableShutdownHooks();
+  // Behind a reverse proxy the client IP (rate limits, audit trail) comes from X-Forwarded-For.
+  if (env.TRUST_PROXY) (app.getHttpAdapter().getInstance() as { set(k: string, v: unknown): void }).set('trust proxy', 1);
+  // The API serves JSON only; reduce what a browser would do with a mistaken HTML response.
+  (app.getHttpAdapter().getInstance() as { disable(k: string): void }).disable('x-powered-by');
 
   if (env.SWAGGER_ENABLED) {
     const config = new DocumentBuilder()

@@ -7,6 +7,7 @@ import 'reflect-metadata';
 import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+// Migrations + first seed run in test/global-setup.ts.
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -25,14 +26,8 @@ describe.skipIf(!url)('database (TEST_DATABASE_URL)', () => {
     execSync(cmd, { env: { ...process.env, DIRECT_URL: url, DATABASE_URL: url }, stdio: 'pipe' }).toString();
 
   beforeAll(async () => {
-    // Safety: this suite drops the "app" schema, so it only ever touches a dedicated *_test database.
-    if (!new URL(url!).pathname.endsWith('_test')) throw new Error('TEST_DATABASE_URL must name a *_test database');
     db = createPrismaClient(url!);
-    await db.$executeRawUnsafe('DROP SCHEMA IF EXISTS "app" CASCADE');
-    await db.$executeRawUnsafe('DROP TABLE IF EXISTS "public"."_prisma_migrations"');
-    run('pnpm exec prisma migrate deploy');
-    run('pnpm exec tsx prisma/seed.ts');
-    run('pnpm exec tsx prisma/seed.ts'); // second run must be a no-op
+    run('pnpm exec tsx prisma/seed.ts'); // second seed run must be a no-op
   }, 180_000);
 
   afterAll(async () => {

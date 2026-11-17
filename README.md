@@ -5,6 +5,7 @@ SaaS для брендов одежды: витрина в стиле рефер
 - Анализ референса: [docs/reference-analysis.md](docs/reference-analysis.md)
 - Архитектура и ER-модель: [docs/architecture.md](docs/architecture.md)
 - База данных: [docs/database.md](docs/database.md)
+- REST API, авторизация и права: [docs/api.md](docs/api.md)
 
 ## Требования
 
