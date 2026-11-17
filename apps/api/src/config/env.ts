@@ -33,6 +33,23 @@ const envSchema = z
     STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
     /** Where Stripe Checkout sends the buyer back (the web app). */
     PUBLIC_WEB_URL: z.url().default('http://localhost:3000'),
+
+    // Telegram Mini App.
+    /** Platform bot (from @BotFather): opens any store. Brands may connect their own bot instead. Server-only. */
+    TELEGRAM_BOT_TOKEN: z.string().regex(/^\d+:[A-Za-z0-9_-]{30,}$/, 'must look like 123456:ABC… from @BotFather').optional(),
+    /** initData older than this is refused (Telegram signs it when the Mini App opens). */
+    TELEGRAM_INITDATA_MAX_AGE_SEC: z.coerce.number().int().min(30).max(86_400).default(600),
+    /** HTTPS address of the Mini App (apps/mini-app) — Telegram only opens HTTPS web apps. */
+    PUBLIC_MINI_APP_URL: z.url().default('http://localhost:3001'),
+    /** Public HTTPS address of this API — needed to register bot webhooks. */
+    PUBLIC_API_URL: z.url().optional(),
+    /** Signs our own session tokens (Telegram sign-in). 32+ random characters. */
+    JWT_SECRET: z.string().min(32).optional(),
+    /** AES-256 key (32 bytes, base64) that encrypts brands' bot tokens at rest. */
+    ENCRYPTION_KEY: z
+      .string()
+      .refine((v) => Buffer.from(v, 'base64').length === 32, 'must be 32 bytes, base64-encoded')
+      .optional(),
   })
   .superRefine((env, ctx) => {
     // Safety net: live keys only in production, so a dev machine can never move real money.

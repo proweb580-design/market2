@@ -12,6 +12,13 @@ export interface CartLine {
 
 type Overlay = 'cart' | 'menu' | 'search' | 'player' | null;
 
+/** The page's main call to action (e.g. "Add to cart"). A host such as Telegram can render it natively. */
+export interface PrimaryAction {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+}
+
 interface StoreContextValue {
   store: StoreConfig;
   products: StoreProduct[];
@@ -27,6 +34,11 @@ interface StoreContextValue {
   toggleWishlist: (slug: string) => void;
   overlay: Overlay;
   setOverlay: (overlay: Overlay) => void;
+  primaryAction: PrimaryAction | null;
+  setPrimaryAction: (action: PrimaryAction | null) => void;
+  /** True when the host shows primaryAction itself (Telegram MainButton) — pages then hide their own bar. */
+  nativePrimary: boolean;
+  setNativePrimary: (native: boolean) => void;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
@@ -54,6 +66,8 @@ export function StoreProvider({
   const [cart, setCart] = useState<CartLine[]>([]);
   const [wishlist, setWishlist] = useState<ReadonlySet<string>>(new Set());
   const [overlay, setOverlay] = useState<Overlay>(null);
+  const [primaryAction, setPrimaryAction] = useState<PrimaryAction | null>(null);
+  const [nativePrimary, setNativePrimary] = useState(false);
 
   const bySlug = useMemo(() => new Map(products.map((p) => [p.slug, p])), [products]);
 
@@ -101,8 +115,12 @@ export function StoreProvider({
       toggleWishlist,
       overlay,
       setOverlay,
+      primaryAction,
+      setPrimaryAction,
+      nativePrimary,
+      setNativePrimary,
     };
-  }, [store, products, variant, basePath, bySlug, cart, addToCart, setQuantity, wishlist, toggleWishlist, overlay]);
+  }, [store, products, variant, basePath, bySlug, cart, addToCart, setQuantity, wishlist, toggleWishlist, overlay, primaryAction, nativePrimary]);
 
   return <StoreContext value={value}>{children}</StoreContext>;
 }

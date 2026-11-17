@@ -36,18 +36,22 @@ export function StoreShell({
   products,
   basePath,
   variant = 'web',
+  extras,
   children,
 }: {
   store: StoreConfig;
   products: StoreProduct[];
   basePath: string;
   variant?: 'web' | 'miniapp';
+  /** Host integrations rendered inside the store context (e.g. the Telegram bridge). */
+  extras?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <StoreProvider store={store} products={products} basePath={basePath} variant={variant}>
       <div className={variant === 'miniapp' ? 'pb-[calc(env(safe-area-inset-bottom)+4rem)]' : undefined}>
         <Chrome basePath={basePath}>{children}</Chrome>
+        {extras}
       </div>
     </StoreProvider>
   );

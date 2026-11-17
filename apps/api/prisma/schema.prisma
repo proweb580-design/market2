@@ -240,6 +240,7 @@ model User {
   wishlistItems        WishlistItem[]
   mediaUploaded        MediaFile[]
   settingsUpdated      PlatformSetting[]
+  telegramLinkCodes    TelegramLinkCode[]
 
   @@index([status])
   @@map("users")
@@ -1217,5 +1218,38 @@ model PlatformSetting {
   updatedBy User? @relation(fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@map("platform_settings")
+  @@schema("app")
+}
+
+// ───────────────────────────── Telegram ─────────────────────────────
+
+/**
+ * Hashes of initData already exchanged for a session — the same signed payload can't be replayed.
+ */
+model TelegramInitDataUse {
+  hash      String   @id
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@index([expiresAt])
+  @@map("telegram_init_data_uses")
+  @@schema("app")
+}
+
+/**
+ * One-time codes that link a Telegram account to a signed-in web account (t.me/<bot>?startapp=link_<code>).
+ */
+model TelegramLinkCode {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  /// SHA-256 of the code; the code itself only travels in the deep link.
+  codeHash  String    @unique @map("code_hash")
+  userId    String    @map("user_id") @db.Uuid
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("telegram_link_codes")
   @@schema("app")
 }

@@ -7,6 +7,7 @@ SaaS для брендов одежды: витрина в стиле рефер
 - База данных: [docs/database.md](docs/database.md)
 - REST API, авторизация и права: [docs/api.md](docs/api.md)
 - Тарифы, подписки, Stripe: [docs/billing.md](docs/billing.md)
+- Telegram Mini App и боты: [docs/telegram.md](docs/telegram.md)
 
 ## Требования
 

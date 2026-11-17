@@ -19,6 +19,7 @@ import { AuthModule } from './modules/auth/auth.module.js';
 import { BillingModule } from './modules/billing/billing.module.js';
 import { SubscriptionGuard } from './modules/billing/subscription.guard.js';
 import { OrganizationsModule } from './modules/organizations/organizations.module.js';
+import { TelegramModule } from './modules/telegram/telegram.module.js';
 import { ProfilesModule } from './modules/profiles/profiles.module.js';
 import { RbacModule } from './modules/rbac/rbac.module.js';
 import { UsersModule } from './modules/users/users.module.js';
@@ -35,6 +36,7 @@ import { UsersModule } from './modules/users/users.module.js';
     AccessModule,
     AuthModule,
     BillingModule,
+    TelegramModule,
     UsersModule,
     ProfilesModule,
     RbacModule,

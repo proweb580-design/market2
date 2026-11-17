@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import Script from 'next/script';
 import { Roboto_Flex } from 'next/font/google';
 import { ThemeScript } from '@repo/ui/storefront/theme-script';
 import './globals.css';
@@ -29,6 +30,8 @@ export default function RootLayout({ children }: LayoutProps<'/'>) {
     <html lang="ru" className={`${font.variable} h-full`} suppressHydrationWarning>
       <head>
         <ThemeScript />
+        {/* Official Telegram Mini App script: provides window.Telegram.WebApp inside Telegram (inert in a browser). */}
+        <Script src="https://telegram.org/js/telegram-web-app.js" strategy="beforeInteractive" />
       </head>
       <body className="min-h-full">{children}</body>
     </html>

@@ -26,11 +26,13 @@ async function StoreLayoutBody({
   params,
   basePath,
   variant,
+  extras,
   children,
 }: {
   params: StoreParams;
   basePath: (store: string) => string;
   variant: 'web' | 'miniapp';
+  extras?: ReactNode;
   children: ReactNode;
 }) {
   const { store: slug } = await params;
@@ -38,7 +40,7 @@ async function StoreLayoutBody({
   if (!store) notFound();
   const products = await getProducts(slug);
   return (
-    <StoreShell store={store} products={products} basePath={basePath(slug)} variant={variant}>
+    <StoreShell store={store} products={products} basePath={basePath(slug)} variant={variant} extras={extras}>
       {children}
     </StoreShell>
   );

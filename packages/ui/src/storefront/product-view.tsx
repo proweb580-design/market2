@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Heart, Ruler, ShoppingBag } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { formatMoney } from '../lib/format';
@@ -63,7 +63,7 @@ export function ProductView({
   nextSlug?: string;
   related: StoreProduct[];
 }) {
-  const { store, href, addToCart, setOverlay, wishlist, toggleWishlist } = useStore();
+  const { store, href, addToCart, setOverlay, wishlist, toggleWishlist, setPrimaryAction, nativePrimary } = useStore();
   const firstInStock = product.sizes.find((s) => s.inStock)?.label;
   const [size, setSize] = useState<string | undefined>(firstInStock);
   const [color, setColor] = useState(product.colors[0]!);
@@ -78,6 +78,13 @@ export function ProductView({
     addToCart({ productSlug: product.slug, size, color: color.name, quantity: qty });
     setOverlay('cart');
   };
+
+  // Offer "add to cart" as the page's main action; a host (Telegram MainButton) may render it natively.
+  useEffect(() => {
+    setPrimaryAction({ label: size ? `Add to cart · ${total}` : 'Select a size', onClick: add, disabled: !size });
+    return () => setPrimaryAction(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `add` closes over exactly these values
+  }, [size, color.name, qty, total, product.slug]);
 
   return (
     <div className="px-page pt-8">
@@ -207,8 +214,8 @@ export function ProductView({
         </section>
       )}
 
-      {/* Mobile sticky purchase bar (no reference for mobile; the Mini App swaps this for Telegram MainButton in phase 7). */}
-      <div className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t border-border bg-background/95 px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur md:hidden">
+      {/* Mobile sticky purchase bar (no reference for mobile). Hidden when a host renders the primary action natively (Telegram MainButton). */}
+      <div className={cn('fixed inset-x-0 bottom-0 z-30 flex items-center gap-3 border-t border-border bg-background/95 px-4 py-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] backdrop-blur md:hidden', nativePrimary && 'hidden')}>
         <div className="min-w-0 flex-1">
           <p className="label-xs truncate font-bold">{product.title}</p>
           <p className="label-xs text-muted-foreground">{size ? `Size ${size}` : 'Select a size'}</p>

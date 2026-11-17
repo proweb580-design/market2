@@ -69,6 +69,20 @@ export class AuthService {
     return { user: { id: user.id, email: user.email, status: user.status }, sessionId };
   }
 
+  /** Our own (Telegram) access token → user. The session row is the authority: revoked/expired sessions stop at once. */
+  async resolvePlatformSession(userId: string, sessionId: string): Promise<{ user: AuthUser; sessionId: string }> {
+    const session = await this.db.session.findUnique({
+      where: { id: sessionId },
+      select: { userId: true, revokedAt: true, expiresAt: true, user: { select: { id: true, email: true, status: true } } },
+    });
+    if (!session || session.userId !== userId || session.revokedAt || (session.expiresAt && session.expiresAt <= new Date())) {
+      throw new UnauthorizedException('Session was revoked');
+    }
+    if (session.user.status === 'BLOCKED') throw new ForbiddenException('Account is blocked');
+    if (session.user.status === 'DELETED') throw new ForbiddenException('Account was deleted');
+    return { user: session.user, sessionId };
+  }
+
   /** Looks a key up by its public prefix, then compares SHA-256 digests in constant time. */
   async resolveApiKey(raw: string): Promise<{ key: ApiKeyInfo & { rateLimitPerMinute: number }; user?: AuthUser }> {
     const invalid = new UnauthorizedException('Invalid API key');

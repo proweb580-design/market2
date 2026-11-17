@@ -11,6 +11,7 @@ import { setupApp } from '../src/setup.js';
 import { createPrismaClient, type Db } from '../src/infra/prisma/create-client.js';
 import { JwtVerifier, TOKEN_VERIFIER } from '../src/modules/auth/token-verifier.js';
 import { PAYMENT_PROVIDER, type PaymentProvider } from '../src/modules/billing/payments/payment-provider.js';
+import { BOT_API, type BotApi } from '../src/modules/telegram/bot-api.js';
 
 loadEnv();
 export const TEST_DB = process.env.TEST_DATABASE_URL;
@@ -51,7 +52,7 @@ export interface TestUser {
   del(path: string): request.Test;
 }
 
-export async function createTestApp(envOverrides: Record<string, string> = {}, options: { paymentProvider?: PaymentProvider } = {}) {
+export async function createTestApp(envOverrides: Record<string, string> = {}, options: { paymentProvider?: PaymentProvider; botApi?: BotApi } = {}) {
   const keys = await generateKeyPair('ES256');
   const verifier = new JwtVerifier({ issuer: ISSUER, audience: AUDIENCE, jwks: async () => keys.publicKey });
 
@@ -70,6 +71,8 @@ export async function createTestApp(envOverrides: Record<string, string> = {}, o
     .useValue(verifier)
     .overrideProvider(PAYMENT_PROVIDER)
     .useValue(options.paymentProvider ?? null)
+    .overrideProvider(BOT_API)
+    .useValue(options.botApi ?? { getMe: () => Promise.reject(new Error('no Bot API in tests')) })
     .compile();
   const app: INestApplication = moduleRef.createNestApplication({ rawBody: true });
   setupApp(app);

@@ -101,3 +101,10 @@ export const auditQuerySchema = paginationQuerySchema.extend({
   actorUserId: uuid.optional(),
   organizationId: uuid.optional(),
 });
+
+// ── Telegram ──
+export const telegramAuthSchema = z.object({ initData: z.string().min(1).max(8192), store: orgSlug }).strict();
+export const telegramRefreshSchema = z.object({ refreshToken: z.string().min(20).max(200) }).strict();
+export const connectBotSchema = z
+  .object({ botToken: z.string().regex(/^\d+:[A-Za-z0-9_-]{30,}$/, 'Paste the token from @BotFather') })
+  .strict();
