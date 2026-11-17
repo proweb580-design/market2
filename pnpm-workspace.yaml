@@ -1,0 +1,7 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Install scripts are opt-in (pnpm blocks them by default).
+allowBuilds:
+  '@scarf/scarf': false # swagger-ui telemetry

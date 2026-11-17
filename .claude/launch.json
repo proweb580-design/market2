@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "--filter", "@repo/web", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "mini-app",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "--filter", "@repo/mini-app", "dev"],
+      "port": 3001
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "corepack",
+      "runtimeArgs": ["pnpm", "--filter", "@repo/api", "dev"],
+      "port": 4000
+    }
+  ]
+}
