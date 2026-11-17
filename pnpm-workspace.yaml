@@ -5,3 +5,6 @@ packages:
 # Install scripts are opt-in (pnpm blocks them by default).
 allowBuilds:
   '@scarf/scarf': false # swagger-ui telemetry
+  '@prisma/engines': true # downloads the Prisma schema engine used by migrate
+  esbuild: true # platform binary for tsx (seed script)
+  prisma: false # preinstall only checks the Node version

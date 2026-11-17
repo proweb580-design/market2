@@ -4,6 +4,7 @@ SaaS для брендов одежды: витрина в стиле рефер
 
 - Анализ референса: [docs/reference-analysis.md](docs/reference-analysis.md)
 - Архитектура и ER-модель: [docs/architecture.md](docs/architecture.md)
+- База данных: [docs/database.md](docs/database.md)
 
 ## Требования
 
@@ -17,6 +18,8 @@ SaaS для брендов одежды: витрина в стиле рефер
 pnpm install
 cp apps/api/.env.example apps/api/.env
 docker compose -f infrastructure/docker-compose.yml up -d
+pnpm --filter @repo/api db:deploy
+pnpm --filter @repo/api db:seed
 pnpm dev
 ```
 

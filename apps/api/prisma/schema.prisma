@@ -1,0 +1,1219 @@
+// Platform database — see docs/architecture.md §5 and docs/database.md.
+// Conventions: UUIDv7 ids, snake_case tables/columns, all tables in schema "app"
+// (not exposed by Supabase's Data API), money as BIGINT minor units, timestamps with time zone.
+// Constraints Prisma can't express (partial unique indexes, CHECKs) live in the migration SQL.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["app"]
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum UserStatus {
+  ACTIVE
+  BLOCKED
+  DELETED
+
+  @@schema("app")
+}
+
+enum ThemePreference {
+  LIGHT
+  DARK
+  SYSTEM
+
+  @@schema("app")
+}
+
+enum SessionKind {
+  WEB
+  TELEGRAM
+
+  @@schema("app")
+}
+
+enum RoleScope {
+  PLATFORM
+  ORGANIZATION
+
+  @@schema("app")
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+
+  @@schema("app")
+}
+
+enum MemberStatus {
+  ACTIVE
+  SUSPENDED
+
+  @@schema("app")
+}
+
+enum IntegrationKind {
+  TELEGRAM_BOT
+  PAYMENT_PROVIDER
+
+  @@schema("app")
+}
+
+enum IntegrationStatus {
+  ACTIVE
+  DISABLED
+
+  @@schema("app")
+}
+
+enum BillingInterval {
+  MONTH
+  YEAR
+
+  @@schema("app")
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+
+  @@schema("app")
+}
+
+enum SubscriptionEventType {
+  CREATED
+  TRIAL_STARTED
+  UPGRADED
+  DOWNGRADE_SCHEDULED
+  DOWNGRADED
+  RENEWED
+  PAYMENT_FAILED
+  CANCEL_SCHEDULED
+  RESUMED
+  CANCELED
+  EXPIRED
+
+  @@schema("app")
+}
+
+enum PaymentPurpose {
+  SUBSCRIPTION
+  ORDER
+
+  @@schema("app")
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELED
+  REFUNDED
+  PARTIALLY_REFUNDED
+
+  @@schema("app")
+}
+
+enum TransactionType {
+  CHARGE
+  REFUND
+
+  @@schema("app")
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+
+  @@schema("app")
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+
+  @@schema("app")
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+
+  @@schema("app")
+}
+
+enum Gender {
+  WOMAN
+  MAN
+  UNISEX
+
+  @@schema("app")
+}
+
+enum CartStatus {
+  ACTIVE
+  CONVERTED
+  ABANDONED
+
+  @@schema("app")
+}
+
+enum OrderStatus {
+  PENDING_PAYMENT
+  PAID
+  FULFILLED
+  CANCELED
+  REFUNDED
+
+  @@schema("app")
+}
+
+enum OrderSource {
+  WEB
+  TELEGRAM
+  API
+
+  @@schema("app")
+}
+
+enum HomeSectionType {
+  HERO
+  FEATURED
+  PRODUCT_GRID
+  DROP_COUNTDOWN
+  COLLECTIONS
+  SOCIAL_FEED
+  TESTIMONIALS
+
+  @@schema("app")
+}
+
+// ───────────────────────────── Identity ─────────────────────────────
+
+model User {
+  id            String     @id @default(uuid(7)) @db.Uuid
+  /// Supabase Auth user id (web sign-in). Null for Telegram-only users.
+  supabaseId    String?    @unique @map("supabase_id") @db.Uuid
+  /// Lower-cased by the app before writing.
+  email         String?    @unique
+  status        UserStatus @default(ACTIVE)
+  blockedAt     DateTime?  @map("blocked_at") @db.Timestamptz(3)
+  blockedReason String?    @map("blocked_reason")
+  lastSeenAt    DateTime?  @map("last_seen_at") @db.Timestamptz(3)
+  deletedAt     DateTime?  @map("deleted_at") @db.Timestamptz(3)
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  profile              Profile?
+  settings             UserSettings?
+  telegramAccount      TelegramAccount?
+  sessions             Session[]
+  roles                UserRole[]           @relation("UserRoles")
+  rolesAssigned        UserRole[]           @relation("RoleAssigner")
+  memberships          OrganizationMember[] @relation("Member")
+  membersInvited       OrganizationMember[] @relation("MemberInviter")
+  invitationsSent      Invitation[]
+  organizationsCreated Organization[]
+  apiKeysOwned         ApiKey[]             @relation("ApiKeyOwner")
+  apiKeysCreated       ApiKey[]             @relation("ApiKeyCreator")
+  auditLogs            AuditLog[]
+  notifications        Notification[]
+  subscriptionEvents   SubscriptionEvent[]
+  carts                Cart[]
+  orders               Order[]
+  wishlistItems        WishlistItem[]
+  mediaUploaded        MediaFile[]
+  settingsUpdated      PlatformSetting[]
+
+  @@index([status])
+  @@map("users")
+  @@schema("app")
+}
+
+model Profile {
+  userId      String   @id @map("user_id") @db.Uuid
+  displayName String?  @map("display_name")
+  avatarUrl   String?  @map("avatar_url")
+  phone       String?
+  locale      String   @default("ru")
+  timezone    String?
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("profiles")
+  @@schema("app")
+}
+
+model UserSettings {
+  userId          String          @id @map("user_id") @db.Uuid
+  theme           ThemePreference @default(SYSTEM)
+  marketingEmails Boolean         @default(false) @map("marketing_emails")
+  /// Per-channel notification toggles, e.g. {"orders":{"email":true,"telegram":true}}.
+  notifications   Json            @default("{}")
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+  @@schema("app")
+}
+
+model TelegramAccount {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  userId       String    @unique @map("user_id") @db.Uuid
+  /// Telegram user ids are global across bots and exceed 32 bits.
+  telegramId   BigInt    @unique @map("telegram_id")
+  username     String?
+  firstName    String?   @map("first_name")
+  lastName     String?   @map("last_name")
+  photoUrl     String?   @map("photo_url")
+  languageCode String?   @map("language_code")
+  linkedAt     DateTime  @default(now()) @map("linked_at") @db.Timestamptz(3)
+  lastAuthAt   DateTime? @map("last_auth_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("telegram_accounts")
+  @@schema("app")
+}
+
+model Session {
+  id                String      @id @default(uuid(7)) @db.Uuid
+  userId            String      @map("user_id") @db.Uuid
+  kind              SessionKind
+  /// SHA-256 of our refresh token (Telegram sessions).
+  refreshTokenHash  String?     @unique @map("refresh_token_hash")
+  /// `session_id` claim of the Supabase JWT (web sessions).
+  supabaseSessionId String?     @unique @map("supabase_session_id") @db.Uuid
+  /// Store the Mini App session was opened in.
+  organizationId    String?     @map("organization_id") @db.Uuid
+  userAgent         String?     @map("user_agent")
+  ip                String?
+  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt        DateTime    @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  expiresAt         DateTime?   @map("expires_at") @db.Timestamptz(3)
+  revokedAt         DateTime?   @map("revoked_at") @db.Timestamptz(3)
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, revokedAt])
+  @@map("sessions")
+  @@schema("app")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  actorUserId    String?  @map("actor_user_id") @db.Uuid
+  actorApiKeyId  String?  @map("actor_api_key_id") @db.Uuid
+  organizationId String?  @map("organization_id") @db.Uuid
+  /// Dotted verb, e.g. "user.blocked", "plan.updated", "api_key.revoked".
+  action         String
+  entityType     String?  @map("entity_type")
+  entityId       String?  @map("entity_id")
+  ip             String?
+  userAgent      String?  @map("user_agent")
+  /// Never contains secrets — the logger strips tokens and keys before writing.
+  metadata       Json?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  // SetNull: the trail must outlive the actors it mentions.
+  actorUser    User?         @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+  actorApiKey  ApiKey?       @relation(fields: [actorApiKeyId], references: [id], onDelete: SetNull)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@map("audit_logs")
+  @@schema("app")
+}
+
+model Notification {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  organizationId String?   @map("organization_id") @db.Uuid
+  type           String
+  title          String
+  body           String?
+  data           Json?
+  readAt         DateTime? @map("read_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+  @@schema("app")
+}
+
+// ───────────────────────────── RBAC ─────────────────────────────
+
+model Role {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  /// SUPER_ADMIN, ORG_OWNER, … or a custom key; unique per organization (system roles: globally, via partial index).
+  key            String
+  name           String
+  description    String?
+  scope          RoleScope
+  /// Null for system roles; set for custom roles a brand creates.
+  organizationId String?   @map("organization_id") @db.Uuid
+  isSystem       Boolean   @default(false) @map("is_system")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization?        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  permissions  RolePermission[]
+  users        UserRole[]
+  // Restrict: a role still assigned to members/invitations cannot be deleted.
+  members      OrganizationMember[]
+  invitations  Invitation[]
+
+  @@unique([organizationId, key])
+  @@map("roles")
+  @@schema("app")
+}
+
+model Permission {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  key         String    @unique
+  description String
+  scope       RoleScope
+
+  roles RolePermission[]
+
+  @@map("permissions")
+  @@schema("app")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@index([permissionId])
+  @@map("role_permissions")
+  @@schema("app")
+}
+
+/// Platform-scope role assignments. Organization roles live on organization_members.role_id.
+model UserRole {
+  userId       String   @map("user_id") @db.Uuid
+  roleId       String   @map("role_id") @db.Uuid
+  assignedById String?  @map("assigned_by_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user       User  @relation("UserRoles", fields: [userId], references: [id], onDelete: Cascade)
+  role       Role  @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  assignedBy User? @relation("RoleAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  @@id([userId, roleId])
+  @@index([roleId])
+  @@map("user_roles")
+  @@schema("app")
+}
+
+// ───────────────────────────── Tenancy ─────────────────────────────
+
+model Organization {
+  id              String             @id @default(uuid(7)) @db.Uuid
+  slug            String             @unique
+  name            String
+  status          OrganizationStatus @default(ACTIVE)
+  customDomain    String?            @unique @map("custom_domain")
+  logoUrl         String?            @map("logo_url")
+  /// ISO 4217 code used for the storefront prices.
+  currency        String             @default("USD") @db.Char(3)
+  /// Storefront theme overrides, footer links, socials, trust bar …
+  settings        Json               @default("{}")
+  /// Next order number; incremented in the same transaction that creates an order.
+  nextOrderNumber Int                @default(1001) @map("next_order_number")
+  createdById     String?            @map("created_by_id") @db.Uuid
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt       DateTime?          @map("deleted_at") @db.Timestamptz(3)
+
+  createdBy             User?                  @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  members               OrganizationMember[]
+  invitations           Invitation[]
+  roles                 Role[]
+  integrations          Integration[]
+  subscriptions         Subscription[]
+  payments              Payment[]
+  apiKeys               ApiKey[]
+  auditLogs             AuditLog[]
+  notifications         Notification[]
+  sessions              Session[]
+  mediaFiles            MediaFile[]
+  sizeCharts            SizeChart[]
+  products              Product[]
+  productVariants       ProductVariant[]
+  collections           Collection[]
+  carts                 Cart[]
+  orders                Order[]
+  wishlistItems         WishlistItem[]
+  homeSections          HomeSection[]
+  lookbooks             Lookbook[]
+  testimonials          Testimonial[]
+  playlistTracks        PlaylistTrack[]
+  newsletterSubscribers NewsletterSubscriber[]
+
+  @@index([status])
+  @@map("organizations")
+  @@schema("app")
+}
+
+model OrganizationMember {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  userId         String       @map("user_id") @db.Uuid
+  roleId         String       @map("role_id") @db.Uuid
+  status         MemberStatus @default(ACTIVE)
+  invitedById    String?      @map("invited_by_id") @db.Uuid
+  joinedAt       DateTime     @default(now()) @map("joined_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation("Member", fields: [userId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  invitedBy    User?        @relation("MemberInviter", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("organization_members")
+  @@schema("app")
+}
+
+model Invitation {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  email          String
+  roleId         String    @map("role_id") @db.Uuid
+  /// SHA-256 of the invite token; the raw token only travels in the email link.
+  tokenHash      String    @unique @map("token_hash")
+  invitedById    String?   @map("invited_by_id") @db.Uuid
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(3)
+  acceptedAt     DateTime? @map("accepted_at") @db.Timestamptz(3)
+  revokedAt      DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  invitedBy    User?        @relation(fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, email])
+  @@map("invitations")
+  @@schema("app")
+}
+
+/// Brand-owned third-party credentials (Telegram bot token, payment provider keys).
+model Integration {
+  id              String            @id @default(uuid(7)) @db.Uuid
+  organizationId  String            @map("organization_id") @db.Uuid
+  kind            IntegrationKind
+  /// "telegram", "sandbox", or a payment provider code.
+  provider        String
+  /// AES-256-GCM envelope ("v1.<iv>.<tag>.<ciphertext>", base64url). Key comes from env, never stored here.
+  secretEncrypted String?           @map("secret_encrypted")
+  /// Non-secret settings safe to show in the dashboard (bot username, mode …).
+  publicConfig    Json              @default("{}") @map("public_config")
+  status          IntegrationStatus @default(ACTIVE)
+  createdAt       DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, kind, provider])
+  @@map("integrations")
+  @@schema("app")
+}
+
+// ───────────────────────────── Plans & subscriptions ─────────────────────────────
+
+model Plan {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  /// FREE, BASIC, PRO, BUSINESS, ENTERPRISE or any code an admin adds.
+  code        String          @unique
+  name        String
+  description String?
+  priceMinor  BigInt          @map("price_minor")
+  currency    String          @db.Char(3)
+  interval    BillingInterval
+  trialDays   Int             @default(0) @map("trial_days")
+  isActive    Boolean         @default(true) @map("is_active")
+  /// False for plans sold by agreement (e.g. Enterprise) — hidden from the pricing page.
+  isPublic    Boolean         @default(true) @map("is_public")
+  sortOrder   Int             @default(0) @map("sort_order")
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  features               PlanFeature[]
+  subscriptions          Subscription[]      @relation("SubscriptionPlan")
+  scheduledSubscriptions Subscription[]      @relation("ScheduledPlan")
+  eventsFrom             SubscriptionEvent[] @relation("EventFromPlan")
+  eventsTo               SubscriptionEvent[] @relation("EventToPlan")
+
+  @@map("plans")
+  @@schema("app")
+}
+
+/// One feature flag or limit of a plan. Keys come from PLAN_FEATURES in @repo/shared.
+/// "Количество пользователей" is the `members.max` limit.
+model PlanFeature {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  planId     String  @map("plan_id") @db.Uuid
+  featureKey String  @map("feature_key")
+  enabled    Boolean @default(true)
+  /// For limit features; null = unlimited.
+  limitValue Int?    @map("limit_value")
+
+  plan Plan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, featureKey])
+  @@map("plan_features")
+  @@schema("app")
+}
+
+model Subscription {
+  id                     String             @id @default(uuid(7)) @db.Uuid
+  organizationId         String             @map("organization_id") @db.Uuid
+  planId                 String             @map("plan_id") @db.Uuid
+  status                 SubscriptionStatus
+  currentPeriodStart     DateTime           @map("current_period_start") @db.Timestamptz(3)
+  currentPeriodEnd       DateTime           @map("current_period_end") @db.Timestamptz(3)
+  trialEndsAt            DateTime?          @map("trial_ends_at") @db.Timestamptz(3)
+  cancelAtPeriodEnd      Boolean            @default(false) @map("cancel_at_period_end")
+  /// Downgrades take effect at period end.
+  scheduledPlanId        String?            @map("scheduled_plan_id") @db.Uuid
+  canceledAt             DateTime?          @map("canceled_at") @db.Timestamptz(3)
+  endedAt                DateTime?          @map("ended_at") @db.Timestamptz(3)
+  providerSubscriptionId String?            @map("provider_subscription_id")
+  createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  // Restrict: plans with subscription history cannot be deleted, only deactivated.
+  plan          Plan                @relation("SubscriptionPlan", fields: [planId], references: [id], onDelete: Restrict)
+  scheduledPlan Plan?               @relation("ScheduledPlan", fields: [scheduledPlanId], references: [id], onDelete: SetNull)
+  events        SubscriptionEvent[]
+  payments      Payment[]
+
+  @@index([organizationId, createdAt])
+  @@index([status, currentPeriodEnd])
+  @@map("subscriptions")
+  @@schema("app")
+}
+
+model SubscriptionEvent {
+  id             String                @id @default(uuid(7)) @db.Uuid
+  subscriptionId String                @map("subscription_id") @db.Uuid
+  type           SubscriptionEventType
+  fromPlanId     String?               @map("from_plan_id") @db.Uuid
+  toPlanId       String?               @map("to_plan_id") @db.Uuid
+  actorUserId    String?               @map("actor_user_id") @db.Uuid
+  metadata       Json?
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  fromPlan     Plan?        @relation("EventFromPlan", fields: [fromPlanId], references: [id], onDelete: SetNull)
+  toPlan       Plan?        @relation("EventToPlan", fields: [toPlanId], references: [id], onDelete: SetNull)
+  actorUser    User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([subscriptionId, createdAt])
+  @@map("subscription_events")
+  @@schema("app")
+}
+
+// ───────────────────────────── Payments ─────────────────────────────
+
+model Payment {
+  id                String         @id @default(uuid(7)) @db.Uuid
+  organizationId    String         @map("organization_id") @db.Uuid
+  purpose           PaymentPurpose
+  subscriptionId    String?        @map("subscription_id") @db.Uuid
+  orderId           String?        @map("order_id") @db.Uuid
+  /// "sandbox" or a real provider code.
+  provider          String
+  providerPaymentId String?        @map("provider_payment_id")
+  amountMinor       BigInt         @map("amount_minor")
+  currency          String         @db.Char(3)
+  status            PaymentStatus  @default(PENDING)
+  /// Client-supplied Idempotency-Key, scoped by the caller.
+  idempotencyKey    String?        @unique @map("idempotency_key")
+  confirmationUrl   String?        @map("confirmation_url")
+  failureReason     String?        @map("failure_reason")
+  metadata          Json?
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  // Restrict: money records are never cascaded away.
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  order        Order?        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  transactions Transaction[]
+
+  @@unique([provider, providerPaymentId])
+  @@index([organizationId, createdAt])
+  @@index([status, createdAt])
+  @@map("payments")
+  @@schema("app")
+}
+
+model Transaction {
+  id                    String            @id @default(uuid(7)) @db.Uuid
+  paymentId             String            @map("payment_id") @db.Uuid
+  type                  TransactionType
+  amountMinor           BigInt            @map("amount_minor")
+  currency              String            @db.Char(3)
+  status                TransactionStatus
+  providerTransactionId String?           @map("provider_transaction_id")
+  createdAt             DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, providerTransactionId])
+  @@index([paymentId, createdAt])
+  @@map("transactions")
+  @@schema("app")
+}
+
+/// Every provider webhook we receive. The (provider, event_id) unique key makes re-delivery a no-op.
+model WebhookEvent {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  provider    String
+  eventId     String        @map("event_id")
+  eventType   String        @map("event_type")
+  payload     Json
+  status      WebhookStatus @default(RECEIVED)
+  error       String?
+  receivedAt  DateTime      @default(now()) @map("received_at") @db.Timestamptz(3)
+  processedAt DateTime?     @map("processed_at") @db.Timestamptz(3)
+
+  @@unique([provider, eventId])
+  @@index([status, receivedAt])
+  @@map("webhook_events")
+  @@schema("app")
+}
+
+/// Stored responses for POST requests sent with an Idempotency-Key header.
+model IdempotencyKey {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  /// "user:<id>" or "api_key:<id>" — keys from different callers never collide.
+  scope          String
+  key            String
+  requestHash    String   @map("request_hash")
+  responseStatus Int?     @map("response_status")
+  responseBody   Json?    @map("response_body")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt      DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@unique([scope, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+  @@schema("app")
+}
+
+// ───────────────────────────── API keys ─────────────────────────────
+
+model ApiKey {
+  id                 String    @id @default(uuid(7)) @db.Uuid
+  organizationId     String?   @map("organization_id") @db.Uuid
+  /// Personal keys belong to a user; organization keys may also record the owner.
+  userId             String?   @map("user_id") @db.Uuid
+  name               String
+  /// Public lookup part shown in the UI ("pk_<prefix>…").
+  prefix             String    @unique
+  /// SHA-256 of the secret. The secret itself is shown once and never stored.
+  keyHash            String    @unique @map("key_hash")
+  /// Permission keys this key may use (subset of its creator's permissions).
+  scopes             String[]
+  rateLimitPerMinute Int       @default(60) @map("rate_limit_per_minute")
+  expiresAt          DateTime? @map("expires_at") @db.Timestamptz(3)
+  lastUsedAt         DateTime? @map("last_used_at") @db.Timestamptz(3)
+  revokedAt          DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdById        String?   @map("created_by_id") @db.Uuid
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?         @relation("ApiKeyOwner", fields: [userId], references: [id], onDelete: Cascade)
+  createdBy    User?         @relation("ApiKeyCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  logs         ApiLog[]
+  auditLogs    AuditLog[]
+
+  @@index([organizationId])
+  @@index([userId])
+  @@map("api_keys")
+  @@schema("app")
+}
+
+model ApiLog {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  apiKeyId   String   @map("api_key_id") @db.Uuid
+  method     String
+  /// Route path without query string (queries may carry personal data).
+  path       String
+  statusCode Int      @map("status_code")
+  durationMs Int      @map("duration_ms")
+  ip         String?
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  apiKey ApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Cascade)
+
+  @@index([apiKeyId, createdAt])
+  @@map("api_logs")
+  @@schema("app")
+}
+
+// ───────────────────────────── Catalog ─────────────────────────────
+
+model MediaFile {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  uploadedById   String?  @map("uploaded_by_id") @db.Uuid
+  /// Object key in storage (Supabase Storage bucket path).
+  storageKey     String   @unique @map("storage_key")
+  mimeType       String   @map("mime_type")
+  sizeBytes      BigInt   @map("size_bytes")
+  width          Int?
+  height         Int?
+  durationSec    Int?     @map("duration_sec")
+  alt            String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization     Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  uploadedBy       User?           @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  productMedia     ProductMedia[]
+  collectionImages Collection[]
+  lookbookItems    LookbookItem[]
+  trackAudio       PlaylistTrack[] @relation("TrackAudio")
+  trackCovers      PlaylistTrack[] @relation("TrackCover")
+
+  @@index([organizationId, createdAt])
+  @@map("media_files")
+  @@schema("app")
+}
+
+model SizeChart {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  /// e.g. ["Chest","Length","Sleeve"]
+  columns        Json
+  /// [{"size":"M","chestCm":57,"values":["57 cm","70 cm","64 cm"]}, …] — chestCm feeds the fit finder.
+  rows           Json
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  products     Product[]
+
+  @@index([organizationId])
+  @@map("size_charts")
+  @@schema("app")
+}
+
+model Product {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  organizationId String        @map("organization_id") @db.Uuid
+  slug           String
+  title          String
+  description    String        @default("")
+  /// Short marker over the title, e.g. "FW26".
+  label          String?
+  status         ProductStatus @default(DRAFT)
+  gender         Gender        @default(UNISEX)
+  sizeChartId    String?       @map("size_chart_id") @db.Uuid
+  sortOrder      Int           @default(0) @map("sort_order")
+  publishedAt    DateTime?     @map("published_at") @db.Timestamptz(3)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization  Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sizeChart     SizeChart?          @relation(fields: [sizeChartId], references: [id], onDelete: SetNull)
+  options       ProductOption[]
+  variants      ProductVariant[]
+  media         ProductMedia[]
+  collections   CollectionProduct[]
+  wishlistItems WishlistItem[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId, status, sortOrder])
+  @@map("products")
+  @@schema("app")
+}
+
+/// "Size", "Color", "Fabric" …
+model ProductOption {
+  id        String @id @default(uuid(7)) @db.Uuid
+  productId String @map("product_id") @db.Uuid
+  name      String
+  position  Int    @default(0)
+
+  product Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  values  ProductOptionValue[]
+
+  @@unique([productId, name])
+  @@map("product_options")
+  @@schema("app")
+}
+
+model ProductOptionValue {
+  id        String  @id @default(uuid(7)) @db.Uuid
+  optionId  String  @map("option_id") @db.Uuid
+  value     String
+  /// Colour swatch for colour options.
+  swatchHex String? @map("swatch_hex") @db.Char(7)
+  position  Int     @default(0)
+
+  option   ProductOption        @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  variants VariantOptionValue[]
+  media    ProductMedia[]
+
+  @@unique([optionId, value])
+  @@map("product_option_values")
+  @@schema("app")
+}
+
+model ProductVariant {
+  id                  String   @id @default(uuid(7)) @db.Uuid
+  /// Denormalised from product for tenant-scoped lookups and per-store SKU uniqueness.
+  organizationId      String   @map("organization_id") @db.Uuid
+  productId           String   @map("product_id") @db.Uuid
+  sku                 String?
+  priceMinor          BigInt   @map("price_minor")
+  compareAtPriceMinor BigInt?  @map("compare_at_price_minor")
+  stock               Int      @default(0)
+  isActive            Boolean  @default(true) @map("is_active")
+  position            Int      @default(0)
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  optionValues VariantOptionValue[]
+  cartItems    CartItem[]
+  orderItems   OrderItem[]
+
+  @@unique([organizationId, sku])
+  @@index([productId, position])
+  @@map("product_variants")
+  @@schema("app")
+}
+
+model VariantOptionValue {
+  variantId     String @map("variant_id") @db.Uuid
+  optionValueId String @map("option_value_id") @db.Uuid
+
+  variant     ProductVariant     @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  optionValue ProductOptionValue @relation(fields: [optionValueId], references: [id], onDelete: Cascade)
+
+  @@id([variantId, optionValueId])
+  @@index([optionValueId])
+  @@map("variant_option_values")
+  @@schema("app")
+}
+
+model ProductMedia {
+  id            String  @id @default(uuid(7)) @db.Uuid
+  productId     String  @map("product_id") @db.Uuid
+  mediaFileId   String  @map("media_file_id") @db.Uuid
+  /// Optional link to a colour value, so the gallery follows the selected colour.
+  optionValueId String? @map("option_value_id") @db.Uuid
+  position      Int     @default(0)
+
+  product     Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  mediaFile   MediaFile           @relation(fields: [mediaFileId], references: [id], onDelete: Cascade)
+  optionValue ProductOptionValue? @relation(fields: [optionValueId], references: [id], onDelete: SetNull)
+
+  @@unique([productId, mediaFileId])
+  @@index([productId, position])
+  @@map("product_media")
+  @@schema("app")
+}
+
+model Collection {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  slug           String
+  title          String
+  description    String?
+  imageId        String?  @map("image_id") @db.Uuid
+  sortOrder      Int      @default(0) @map("sort_order")
+  isPublished    Boolean  @default(true) @map("is_published")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  image        MediaFile?          @relation(fields: [imageId], references: [id], onDelete: SetNull)
+  products     CollectionProduct[]
+
+  @@unique([organizationId, slug])
+  @@map("collections")
+  @@schema("app")
+}
+
+model CollectionProduct {
+  collectionId String @map("collection_id") @db.Uuid
+  productId    String @map("product_id") @db.Uuid
+  position     Int    @default(0)
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, productId])
+  @@index([productId])
+  @@map("collection_products")
+  @@schema("app")
+}
+
+// ───────────────────────────── Commerce ─────────────────────────────
+
+model Cart {
+  id                 String     @id @default(uuid(7)) @db.Uuid
+  organizationId     String     @map("organization_id") @db.Uuid
+  userId             String?    @map("user_id") @db.Uuid
+  /// SHA-256 of the guest cart cookie token (web visitors before sign-in).
+  anonymousTokenHash String?    @unique @map("anonymous_token_hash")
+  status             CartStatus @default(ACTIVE)
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items        CartItem[]
+
+  @@index([organizationId, userId, status])
+  @@map("carts")
+  @@schema("app")
+}
+
+model CartItem {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  cartId    String   @map("cart_id") @db.Uuid
+  variantId String   @map("variant_id") @db.Uuid
+  quantity  Int
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  cart    Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, variantId])
+  @@map("cart_items")
+  @@schema("app")
+}
+
+model Order {
+  id              String      @id @default(uuid(7)) @db.Uuid
+  organizationId  String      @map("organization_id") @db.Uuid
+  /// Human-facing number, sequential per store (from organizations.next_order_number).
+  number          Int
+  userId          String?     @map("user_id") @db.Uuid
+  status          OrderStatus @default(PENDING_PAYMENT)
+  source          OrderSource
+  currency        String      @db.Char(3)
+  subtotalMinor   BigInt      @map("subtotal_minor")
+  shippingMinor   BigInt      @default(0) @map("shipping_minor")
+  discountMinor   BigInt      @default(0) @map("discount_minor")
+  taxMinor        BigInt      @default(0) @map("tax_minor")
+  totalMinor      BigInt      @map("total_minor")
+  contactEmail    String?     @map("contact_email")
+  contactPhone    String?     @map("contact_phone")
+  shippingAddress Json?       @map("shipping_address")
+  note            String?
+  paidAt          DateTime?   @map("paid_at") @db.Timestamptz(3)
+  canceledAt      DateTime?   @map("canceled_at") @db.Timestamptz(3)
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  // Restrict on org: orders are accounting records. SetNull on user: account deletion keeps the order.
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items        OrderItem[]
+  payments     Payment[]
+
+  @@unique([organizationId, number])
+  @@index([organizationId, status, createdAt])
+  @@index([userId, createdAt])
+  @@map("orders")
+  @@schema("app")
+}
+
+/// Snapshot of what was bought — survives product edits and deletion.
+model OrderItem {
+  id             String  @id @default(uuid(7)) @db.Uuid
+  orderId        String  @map("order_id") @db.Uuid
+  variantId      String? @map("variant_id") @db.Uuid
+  productTitle   String  @map("product_title")
+  variantTitle   String  @map("variant_title")
+  sku            String?
+  unitPriceMinor BigInt  @map("unit_price_minor")
+  quantity       Int
+  totalMinor     BigInt  @map("total_minor")
+
+  order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variant ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("order_items")
+  @@schema("app")
+}
+
+model WishlistItem {
+  userId         String   @map("user_id") @db.Uuid
+  productId      String   @map("product_id") @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@id([userId, productId])
+  @@index([userId, organizationId])
+  @@map("wishlist_items")
+  @@schema("app")
+}
+
+// ───────────────────────────── Storefront content ─────────────────────────────
+
+model HomeSection {
+  id             String          @id @default(uuid(7)) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  type           HomeSectionType
+  position       Int             @default(0)
+  isEnabled      Boolean         @default(true) @map("is_enabled")
+  /// Section-specific settings (titles, product ids, countdown end date, panels).
+  config         Json            @default("{}")
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, position])
+  @@map("home_sections")
+  @@schema("app")
+}
+
+model Lookbook {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  slug           String
+  title          String
+  subtitle       String?
+  isPublished    Boolean  @default(false) @map("is_published")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items        LookbookItem[]
+
+  @@unique([organizationId, slug])
+  @@map("lookbooks")
+  @@schema("app")
+}
+
+model LookbookItem {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  lookbookId  String  @map("lookbook_id") @db.Uuid
+  mediaFileId String  @map("media_file_id") @db.Uuid
+  tag         String?
+  title       String?
+  caption     String?
+  position    Int     @default(0)
+
+  lookbook  Lookbook  @relation(fields: [lookbookId], references: [id], onDelete: Cascade)
+  mediaFile MediaFile @relation(fields: [mediaFileId], references: [id], onDelete: Cascade)
+
+  @@index([lookbookId, position])
+  @@map("lookbook_items")
+  @@schema("app")
+}
+
+model Testimonial {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  author         String
+  location       String?
+  quote          String
+  position       Int      @default(0)
+  isPublished    Boolean  @default(true) @map("is_published")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, position])
+  @@map("testimonials")
+  @@schema("app")
+}
+
+model PlaylistTrack {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  title          String
+  artist         String
+  audioFileId    String?  @map("audio_file_id") @db.Uuid
+  coverFileId    String?  @map("cover_file_id") @db.Uuid
+  durationSec    Int      @map("duration_sec")
+  position       Int      @default(0)
+  isPublished    Boolean  @default(true) @map("is_published")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  audioFile    MediaFile?   @relation("TrackAudio", fields: [audioFileId], references: [id], onDelete: SetNull)
+  coverFile    MediaFile?   @relation("TrackCover", fields: [coverFileId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, position])
+  @@map("playlist_tracks")
+  @@schema("app")
+}
+
+model NewsletterSubscriber {
+  id             String    @id @default(uuid(7)) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  /// Lower-cased by the app.
+  email          String
+  consentAt      DateTime  @map("consent_at") @db.Timestamptz(3)
+  unsubscribedAt DateTime? @map("unsubscribed_at") @db.Timestamptz(3)
+  source         String?
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, email])
+  @@map("newsletter_subscribers")
+  @@schema("app")
+}
+
+// ───────────────────────────── Platform ─────────────────────────────
+
+model PlatformSetting {
+  key         String   @id
+  value       Json
+  updatedById String?  @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  updatedBy User? @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("platform_settings")
+  @@schema("app")
+}

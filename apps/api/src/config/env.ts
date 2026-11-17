@@ -14,6 +14,7 @@ const envSchema = z.object({
         .filter(Boolean),
     ),
   SWAGGER_ENABLED: z.stringbool().default(true),
+  DATABASE_URL: z.string().regex(/^postgres(ql)?:\/\//, 'must be a postgresql:// connection string'),
 });
 
 export type Env = z.infer<typeof envSchema>;

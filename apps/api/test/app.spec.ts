@@ -13,7 +13,14 @@ describe('API bootstrap', () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(ENV)
-      .useValue(parseEnv({ NODE_ENV: 'test', CORS_ORIGINS: 'http://localhost:3000' }))
+      .useValue(
+        parseEnv({
+          NODE_ENV: 'test',
+          CORS_ORIGINS: 'http://localhost:3000',
+          // Deliberately unreachable: these tests cover the API without a database.
+          DATABASE_URL: 'postgresql://nobody:nothing@127.0.0.1:1/none',
+        }),
+      )
       .compile();
     app = moduleRef.createNestApplication();
     setupApp(app);
@@ -42,10 +49,18 @@ describe('API bootstrap', () => {
       .set('Origin', 'https://evil.example');
     expect(evil.headers['access-control-allow-origin']).toBeUndefined();
   });
+
+  it('reports not-ready (503) without leaking details when the database is down', async () => {
+    const res = await request(app.getHttpServer()).get('/api/v1/health/ready').expect(503);
+    expect(res.body).toMatchObject({ status: 'error', database: 'down' });
+    expect(JSON.stringify(res.body)).not.toMatch(/127\.0\.0\.1|nobody|ECONNREFUSED/);
+  });
 });
 
 describe('parseEnv', () => {
-  it('refuses to start without CORS_ORIGINS', () => {
-    expect(() => parseEnv({})).toThrow(/CORS_ORIGINS/);
+  it('refuses to start without CORS_ORIGINS or DATABASE_URL', () => {
+    expect(() => parseEnv({ DATABASE_URL: 'postgresql://x' })).toThrow(/CORS_ORIGINS/);
+    expect(() => parseEnv({ CORS_ORIGINS: 'http://a' })).toThrow(/DATABASE_URL/);
+    expect(() => parseEnv({ CORS_ORIGINS: 'http://a', DATABASE_URL: 'mysql://x' })).toThrow(/DATABASE_URL/);
   });
 });
